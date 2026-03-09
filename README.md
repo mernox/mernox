@@ -5,7 +5,6 @@ A tiny browser ASCII game.
 ## Run
 
 1. Open `index.html` in your browser.
-2. Move with `A` / `D` or Left / Right arrows.
+2. Move with Left / Right arrow keys.
 3. Avoid the falling `*` characters.
 4. Click **Restart** when game over.
-

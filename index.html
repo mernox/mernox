@@ -100,7 +100,7 @@
       </div>
       <pre id="screen" aria-label="ASCII game area"></pre>
       <div class="hint">
-        Move with <strong>A</strong>/<strong>D</strong> or arrow keys. Avoid the
+        Move with Left/Right arrow keys. Avoid the
         falling <span class="danger">*</span>.
       </div>
       <button id="restart" type="button">Restart</button>
@@ -221,13 +221,13 @@
       }
 
       document.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") moveLeft = true;
-        if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") moveRight = true;
+        if (e.key === "ArrowLeft") moveLeft = true;
+        if (e.key === "ArrowRight") moveRight = true;
       });
 
       document.addEventListener("keyup", (e) => {
-        if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") moveLeft = false;
-        if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") moveRight = false;
+        if (e.key === "ArrowLeft") moveLeft = false;
+        if (e.key === "ArrowRight") moveRight = false;
       });
 
       restartBtn.addEventListener("click", start);
