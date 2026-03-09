@@ -3,13 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ASCII Dodge</title>
+    <title>ASCII Space Invaders</title>
     <style>
       :root {
-        --bg: #0f172a;
-        --panel: #111827;
-        --text: #e5e7eb;
-        --accent: #22d3ee;
+        --bg: #090f1f;
+        --panel: #0f1a2f;
+        --text: #e2e8f0;
+        --accent: #7dd3fc;
         --danger: #fb7185;
       }
 
@@ -28,25 +28,25 @@
       }
 
       .game-wrap {
-        width: min(95vw, 680px);
+        width: min(96vw, 760px);
         padding: 16px;
         border: 2px solid #334155;
-        background: linear-gradient(180deg, #0b1221, var(--panel));
         border-radius: 10px;
-        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+        background: linear-gradient(180deg, #0b1220, var(--panel));
+        box-shadow: 0 10px 35px rgba(0, 0, 0, 0.4);
       }
 
       h1 {
         margin: 0 0 8px;
-        font-size: 1.1rem;
+        font-size: 1.15rem;
         color: var(--accent);
       }
 
       .meta {
         display: flex;
-        gap: 18px;
+        gap: 16px;
+        flex-wrap: wrap;
         margin-bottom: 10px;
-        font-size: 0.95rem;
       }
 
       pre {
@@ -56,11 +56,11 @@
         border-radius: 6px;
         background: #020617;
         color: var(--text);
-        line-height: 1.15;
-        font-size: clamp(10px, 1.7vw, 14px);
-        user-select: none;
+        line-height: 1.12;
+        font-size: clamp(10px, 1.45vw, 14px);
+        min-height: 420px;
         overflow: auto;
-        min-height: 360px;
+        user-select: none;
       }
 
       .hint {
@@ -75,14 +75,14 @@
 
       button {
         margin-top: 12px;
-        background: #0ea5e9;
-        color: #001018;
         border: 0;
         border-radius: 6px;
         padding: 8px 12px;
         font-family: inherit;
-        cursor: pointer;
         font-weight: 700;
+        cursor: pointer;
+        background: #0ea5e9;
+        color: #03111f;
       }
 
       button:hover {
@@ -92,146 +92,433 @@
   </head>
   <body>
     <div class="game-wrap">
-      <h1>ASCII Dodge</h1>
+      <h1>ASCII Space Invaders</h1>
       <div class="meta">
         <div>Score: <strong id="score">0</strong></div>
+        <div>Lives: <strong id="lives">3</strong></div>
+        <div>Level: <strong id="level">1</strong></div>
         <div>Best: <strong id="best">0</strong></div>
-        <div>Speed: <strong id="speed">1.0x</strong></div>
       </div>
       <pre id="screen" aria-label="ASCII game area"></pre>
       <div class="hint">
-        Move with Left/Right arrow keys. Avoid the
-        falling <span class="danger">*</span>.
+        <strong>ArrowLeft/ArrowRight</strong> move, <strong>ArrowUp</strong> shoots.
+        Protect yourself behind shields and stop the invasion.
       </div>
       <button id="restart" type="button">Restart</button>
     </div>
 
     <script>
-      const WIDTH = 38;
-      const HEIGHT = 20;
+      const WIDTH = 44;
+      const HEIGHT = 24;
+      const PLAYER_Y = HEIGHT - 2;
+
       const screen = document.getElementById("screen");
       const scoreEl = document.getElementById("score");
+      const livesEl = document.getElementById("lives");
+      const levelEl = document.getElementById("level");
       const bestEl = document.getElementById("best");
-      const speedEl = document.getElementById("speed");
       const restartBtn = document.getElementById("restart");
 
-      const bestStorageKey = "ascii-dodge-best";
+      const bestStorageKey = "ascii-space-invaders-best";
       let best = Number(localStorage.getItem(bestStorageKey) || 0);
       bestEl.textContent = String(best);
 
-      let playerX;
-      let obstacles;
-      let tick;
-      let score;
-      let over;
-      let rafId;
-      let lastTime;
-      let moveLeft = false;
-      let moveRight = false;
+      let leftPressed = false;
+      let rightPressed = false;
+
+      let playerX = 0;
+      let playerBullet = null;
+      let alienBullets = [];
+      let aliens = [];
+      let shields = new Map();
+      let alienDir = 1;
+      let alienFrame = 0;
+      let score = 0;
+      let lives = 3;
+      let level = 1;
+      let gameOver = false;
+      let statusText = "";
+
+      let lastTime = 0;
+      let rafId = 0;
+      let moveTimer = 0;
+      let playerBulletTimer = 0;
+      let alienBulletTimer = 0;
+      let alienMoveTimer = 0;
+      let alienFireTimer = 0;
 
       function resetGame() {
-        playerX = Math.floor(WIDTH / 2);
-        obstacles = [];
-        tick = 0;
         score = 0;
-        over = false;
-        lastTime = 0;
-        scoreEl.textContent = "0";
-        speedEl.textContent = "1.0x";
+        lives = 3;
+        level = 1;
+        gameOver = false;
+        statusText = "";
+        startLevel(level);
+        updateHud();
       }
 
-      function spawnObstacle() {
-        const chance = Math.min(0.2 + tick * 0.0007, 0.55);
-        if (Math.random() < chance) {
-          obstacles.push({ x: Math.floor(Math.random() * WIDTH), y: 0 });
+      function startLevel(nextLevel) {
+        level = nextLevel;
+        playerX = Math.floor(WIDTH / 2);
+        playerBullet = null;
+        alienBullets = [];
+        alienDir = 1;
+        alienFrame = 0;
+        moveTimer = 0;
+        playerBulletTimer = 0;
+        alienBulletTimer = 0;
+        alienMoveTimer = 0;
+        alienFireTimer = 0;
+        buildAliens();
+        buildShields();
+        statusText = "";
+        updateHud();
+      }
+
+      function buildAliens() {
+        aliens = [];
+        const rows = 5;
+        const cols = 11;
+        const startX = 6;
+        const startY = 2;
+        const spacingX = 3;
+        const spacingY = 2;
+
+        for (let row = 0; row < rows; row += 1) {
+          for (let col = 0; col < cols; col += 1) {
+            aliens.push({
+              x: startX + col * spacingX,
+              y: startY + row * spacingY,
+              row,
+              alive: true,
+            });
+          }
         }
       }
 
-      function update() {
-        if (moveLeft) playerX = Math.max(0, playerX - 1);
-        if (moveRight) playerX = Math.min(WIDTH - 1, playerX + 1);
+      function buildShields() {
+        shields = new Map();
+        const pattern = [" #### ", "######", "##  ##"];
+        const baseY = HEIGHT - 7;
+        const starts = [3, 14, 25, 36];
 
-        spawnObstacle();
+        for (const startX of starts) {
+          for (let y = 0; y < pattern.length; y += 1) {
+            for (let x = 0; x < pattern[y].length; x += 1) {
+              if (pattern[y][x] === "#") {
+                const key = `${startX + x},${baseY + y}`;
+                shields.set(key, 2);
+              }
+            }
+          }
+        }
+      }
 
-        const speedStep = tick > 900 ? 2 : tick > 400 ? 1 : 0;
-        for (const o of obstacles) o.y += 1 + speedStep;
+      function shieldDamageAt(x, y) {
+        const key = `${x},${y}`;
+        if (!shields.has(key)) return false;
+        const hp = shields.get(key) - 1;
+        if (hp <= 0) {
+          shields.delete(key);
+        } else {
+          shields.set(key, hp);
+        }
+        return true;
+      }
 
-        obstacles = obstacles.filter((o) => o.y < HEIGHT);
+      function shieldChar(hp) {
+        return hp === 2 ? "#" : "=";
+      }
 
-        for (const o of obstacles) {
-          if (o.y === HEIGHT - 1 && o.x === playerX) {
-            over = true;
+      function updateHud() {
+        scoreEl.textContent = String(score);
+        livesEl.textContent = String(lives);
+        levelEl.textContent = String(level);
+        bestEl.textContent = String(best);
+      }
+
+      function livingAliens() {
+        return aliens.filter((a) => a.alive);
+      }
+
+      function alienMoveInterval() {
+        const alive = livingAliens().length;
+        return Math.max(90, 500 - (55 - alive) * 7 - (level - 1) * 35);
+      }
+
+      function alienFireInterval() {
+        const alive = livingAliens().length;
+        return Math.max(260, 980 - (55 - alive) * 9 - (level - 1) * 90);
+      }
+
+      function shootPlayerBullet() {
+        if (gameOver || playerBullet) return;
+        playerBullet = { x: playerX, y: PLAYER_Y - 1 };
+        playerBulletTimer = 0;
+      }
+
+      function alienValueByRow(row) {
+        if (row <= 0) return 30;
+        if (row <= 2) return 20;
+        return 10;
+      }
+
+      function moveAliensOneStep() {
+        const alive = livingAliens();
+        if (alive.length === 0) return;
+
+        let edgeHit = false;
+        for (const alien of alive) {
+          const nextX = alien.x + alienDir;
+          if (nextX < 0 || nextX >= WIDTH) {
+            edgeHit = true;
+            break;
           }
         }
 
-        if (!over) {
-          score += 1;
-          tick += 1;
-          scoreEl.textContent = String(score);
-          speedEl.textContent = (1 + speedStep * 0.4).toFixed(1) + "x";
-          if (score > best) {
-            best = score;
-            localStorage.setItem(bestStorageKey, String(best));
-            bestEl.textContent = String(best);
+        if (edgeHit) {
+          alienDir *= -1;
+          for (const alien of alive) alien.y += 1;
+        } else {
+          for (const alien of alive) alien.x += alienDir;
+        }
+
+        alienFrame = 1 - alienFrame;
+
+        for (const alien of alive) {
+          if (alien.y >= PLAYER_Y) {
+            gameOver = true;
+            statusText = "INVASION - GAME OVER";
           }
+        }
+      }
+
+      function bottomAliens() {
+        const byColumn = new Map();
+        for (const alien of livingAliens()) {
+          const key = alien.x;
+          const current = byColumn.get(key);
+          if (!current || alien.y > current.y) {
+            byColumn.set(key, alien);
+          }
+        }
+        return [...byColumn.values()];
+      }
+
+      function alienShoot() {
+        if (gameOver) return;
+        const shooters = bottomAliens();
+        if (shooters.length === 0 || alienBullets.length >= 4) return;
+        const shooter = shooters[Math.floor(Math.random() * shooters.length)];
+        alienBullets.push({ x: shooter.x, y: shooter.y + 1 });
+      }
+
+      function loseLife() {
+        lives -= 1;
+        playerBullet = null;
+        alienBullets = [];
+        playerX = Math.floor(WIDTH / 2);
+
+        if (lives <= 0) {
+          lives = 0;
+          gameOver = true;
+          statusText = "GAME OVER";
+        }
+
+        updateHud();
+      }
+
+      function handleBulletCollisions() {
+        if (playerBullet) {
+          if (shieldDamageAt(playerBullet.x, playerBullet.y)) {
+            playerBullet = null;
+          }
+        }
+
+        if (playerBullet) {
+          for (const alien of aliens) {
+            if (alien.alive && alien.x === playerBullet.x && alien.y === playerBullet.y) {
+              alien.alive = false;
+              score += alienValueByRow(alien.row);
+              if (score > best) {
+                best = score;
+                localStorage.setItem(bestStorageKey, String(best));
+              }
+              playerBullet = null;
+              updateHud();
+              break;
+            }
+          }
+        }
+
+        if (playerBullet) {
+          for (let i = 0; i < alienBullets.length; i += 1) {
+            if (alienBullets[i].x === playerBullet.x && alienBullets[i].y === playerBullet.y) {
+              alienBullets.splice(i, 1);
+              playerBullet = null;
+              break;
+            }
+          }
+        }
+
+        for (let i = alienBullets.length - 1; i >= 0; i -= 1) {
+          const bullet = alienBullets[i];
+
+          if (shieldDamageAt(bullet.x, bullet.y)) {
+            alienBullets.splice(i, 1);
+            continue;
+          }
+
+          if (bullet.y === PLAYER_Y && bullet.x === playerX) {
+            loseLife();
+            break;
+          }
+        }
+      }
+
+      function update(delta) {
+        if (gameOver) return;
+
+        moveTimer += delta;
+        while (moveTimer >= 55) {
+          moveTimer -= 55;
+          if (leftPressed !== rightPressed) {
+            playerX += leftPressed ? -1 : 1;
+            playerX = Math.max(0, Math.min(WIDTH - 1, playerX));
+          }
+        }
+
+        playerBulletTimer += delta;
+        while (playerBullet && playerBulletTimer >= 45) {
+          playerBulletTimer -= 45;
+          playerBullet.y -= 1;
+          if (playerBullet.y < 0) {
+            playerBullet = null;
+          }
+        }
+
+        alienBulletTimer += delta;
+        while (alienBulletTimer >= 70) {
+          alienBulletTimer -= 70;
+          for (const bullet of alienBullets) {
+            bullet.y += 1;
+          }
+          alienBullets = alienBullets.filter((b) => b.y < HEIGHT);
+        }
+
+        alienMoveTimer += delta;
+        const moveInterval = alienMoveInterval();
+        while (alienMoveTimer >= moveInterval) {
+          alienMoveTimer -= moveInterval;
+          moveAliensOneStep();
+        }
+
+        alienFireTimer += delta;
+        const fireInterval = alienFireInterval();
+        while (alienFireTimer >= fireInterval) {
+          alienFireTimer -= fireInterval;
+          alienShoot();
+        }
+
+        handleBulletCollisions();
+
+        if (!gameOver && livingAliens().length === 0) {
+          level += 1;
+          startLevel(level);
         }
       }
 
       function render() {
         const grid = Array.from({ length: HEIGHT }, () => Array(WIDTH).fill(" "));
 
-        for (const o of obstacles) {
-          if (o.y >= 0 && o.y < HEIGHT && o.x >= 0 && o.x < WIDTH) {
-            grid[o.y][o.x] = "*";
+        for (const [key, hp] of shields.entries()) {
+          const [x, y] = key.split(",").map(Number);
+          if (y >= 0 && y < HEIGHT && x >= 0 && x < WIDTH) {
+            grid[y][x] = shieldChar(hp);
           }
         }
 
-        grid[HEIGHT - 1][playerX] = "@";
+        const alienGlyphs = [
+          ["W", "M"],
+          ["A", "H"],
+          ["A", "H"],
+          ["V", "U"],
+          ["V", "U"],
+        ];
+
+        for (const alien of aliens) {
+          if (!alien.alive) continue;
+          if (alien.y >= 0 && alien.y < HEIGHT && alien.x >= 0 && alien.x < WIDTH) {
+            grid[alien.y][alien.x] = alienGlyphs[alien.row][alienFrame];
+          }
+        }
+
+        if (playerBullet && playerBullet.y >= 0 && playerBullet.y < HEIGHT) {
+          grid[playerBullet.y][playerBullet.x] = "|";
+        }
+
+        for (const bullet of alienBullets) {
+          if (bullet.y >= 0 && bullet.y < HEIGHT) {
+            grid[bullet.y][bullet.x] = "!";
+          }
+        }
+
+        if (!gameOver) {
+          grid[PLAYER_Y][playerX] = "A";
+        }
 
         const topBorder = "+" + "-".repeat(WIDTH) + "+";
         const rows = grid.map((row) => "|" + row.join("") + "|");
         let text = [topBorder, ...rows, topBorder].join("\n");
 
-        if (over) {
-          text += "\n\nGAME OVER - press Restart";
+        if (statusText) {
+          text += `\n\n${statusText}`;
+        }
+
+        if (gameOver) {
+          text += "\nPress Restart to play again.";
         }
 
         screen.textContent = text;
       }
 
-      function loop(ts) {
-        if (!lastTime) lastTime = ts;
-        const delta = ts - lastTime;
-        const interval = 80;
+      function loop(timestamp) {
+        if (!lastTime) lastTime = timestamp;
+        const delta = Math.min(60, timestamp - lastTime);
+        lastTime = timestamp;
 
-        if (delta >= interval && !over) {
-          update();
-          lastTime = ts;
-        }
-
+        update(delta);
         render();
-        rafId = requestAnimationFrame(loop);
-      }
 
-      function start() {
-        cancelAnimationFrame(rafId);
-        resetGame();
-        render();
         rafId = requestAnimationFrame(loop);
       }
 
       document.addEventListener("keydown", (e) => {
-        if (e.key === "ArrowLeft") moveLeft = true;
-        if (e.key === "ArrowRight") moveRight = true;
+        if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "ArrowUp") {
+          e.preventDefault();
+        }
+
+        if (e.key === "ArrowLeft") leftPressed = true;
+        if (e.key === "ArrowRight") rightPressed = true;
+        if (e.key === "ArrowUp") shootPlayerBullet();
       });
 
       document.addEventListener("keyup", (e) => {
-        if (e.key === "ArrowLeft") moveLeft = false;
-        if (e.key === "ArrowRight") moveRight = false;
+        if (e.key === "ArrowLeft") leftPressed = false;
+        if (e.key === "ArrowRight") rightPressed = false;
       });
 
-      restartBtn.addEventListener("click", start);
-      start();
+      restartBtn.addEventListener("click", () => {
+        cancelAnimationFrame(rafId);
+        lastTime = 0;
+        resetGame();
+        render();
+        rafId = requestAnimationFrame(loop);
+      });
+
+      resetGame();
+      render();
+      rafId = requestAnimationFrame(loop);
     </script>
   </body>
 </html>

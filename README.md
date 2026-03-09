@@ -1,10 +1,15 @@
-# ASCII Dodge
+# ASCII Space Invaders
 
-A tiny browser ASCII game.
+A browser-based ASCII Space Invaders style game.
+
+## Controls
+
+- `ArrowLeft`: Move left
+- `ArrowRight`: Move right
+- `ArrowUp`: Shoot
 
 ## Run
 
 1. Open `index.html` in your browser.
-2. Move with Left / Right arrow keys.
-3. Avoid the falling `*` characters.
-4. Click **Restart** when game over.
+2. Play and survive as long as you can.
+3. Click **Restart** after game over.
