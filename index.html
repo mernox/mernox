@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ASCII Dodge</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --text: #e5e7eb;
+        --accent: #22d3ee;
+        --danger: #fb7185;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(circle at top, #1e293b, var(--bg));
+        color: var(--text);
+        font-family: "Courier New", Courier, monospace;
+      }
+
+      .game-wrap {
+        width: min(95vw, 680px);
+        padding: 16px;
+        border: 2px solid #334155;
+        background: linear-gradient(180deg, #0b1221, var(--panel));
+        border-radius: 10px;
+        box-shadow: 0 8px 30px rgba(0, 0, 0, 0.35);
+      }
+
+      h1 {
+        margin: 0 0 8px;
+        font-size: 1.1rem;
+        color: var(--accent);
+      }
+
+      .meta {
+        display: flex;
+        gap: 18px;
+        margin-bottom: 10px;
+        font-size: 0.95rem;
+      }
+
+      pre {
+        margin: 0;
+        padding: 10px;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        background: #020617;
+        color: var(--text);
+        line-height: 1.15;
+        font-size: clamp(10px, 1.7vw, 14px);
+        user-select: none;
+        overflow: auto;
+        min-height: 360px;
+      }
+
+      .hint {
+        margin-top: 10px;
+        color: #cbd5e1;
+        font-size: 0.9rem;
+      }
+
+      .danger {
+        color: var(--danger);
+      }
+
+      button {
+        margin-top: 12px;
+        background: #0ea5e9;
+        color: #001018;
+        border: 0;
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-family: inherit;
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      button:hover {
+        filter: brightness(1.1);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="game-wrap">
+      <h1>ASCII Dodge</h1>
+      <div class="meta">
+        <div>Score: <strong id="score">0</strong></div>
+        <div>Best: <strong id="best">0</strong></div>
+        <div>Speed: <strong id="speed">1.0x</strong></div>
+      </div>
+      <pre id="screen" aria-label="ASCII game area"></pre>
+      <div class="hint">
+        Move with <strong>A</strong>/<strong>D</strong> or arrow keys. Avoid the
+        falling <span class="danger">*</span>.
+      </div>
+      <button id="restart" type="button">Restart</button>
+    </div>
+
+    <script>
+      const WIDTH = 38;
+      const HEIGHT = 20;
+      const screen = document.getElementById("screen");
+      const scoreEl = document.getElementById("score");
+      const bestEl = document.getElementById("best");
+      const speedEl = document.getElementById("speed");
+      const restartBtn = document.getElementById("restart");
+
+      const bestStorageKey = "ascii-dodge-best";
+      let best = Number(localStorage.getItem(bestStorageKey) || 0);
+      bestEl.textContent = String(best);
+
+      let playerX;
+      let obstacles;
+      let tick;
+      let score;
+      let over;
+      let rafId;
+      let lastTime;
+      let moveLeft = false;
+      let moveRight = false;
+
+      function resetGame() {
+        playerX = Math.floor(WIDTH / 2);
+        obstacles = [];
+        tick = 0;
+        score = 0;
+        over = false;
+        lastTime = 0;
+        scoreEl.textContent = "0";
+        speedEl.textContent = "1.0x";
+      }
+
+      function spawnObstacle() {
+        const chance = Math.min(0.2 + tick * 0.0007, 0.55);
+        if (Math.random() < chance) {
+          obstacles.push({ x: Math.floor(Math.random() * WIDTH), y: 0 });
+        }
+      }
+
+      function update() {
+        if (moveLeft) playerX = Math.max(0, playerX - 1);
+        if (moveRight) playerX = Math.min(WIDTH - 1, playerX + 1);
+
+        spawnObstacle();
+
+        const speedStep = tick > 900 ? 2 : tick > 400 ? 1 : 0;
+        for (const o of obstacles) o.y += 1 + speedStep;
+
+        obstacles = obstacles.filter((o) => o.y < HEIGHT);
+
+        for (const o of obstacles) {
+          if (o.y === HEIGHT - 1 && o.x === playerX) {
+            over = true;
+          }
+        }
+
+        if (!over) {
+          score += 1;
+          tick += 1;
+          scoreEl.textContent = String(score);
+          speedEl.textContent = (1 + speedStep * 0.4).toFixed(1) + "x";
+          if (score > best) {
+            best = score;
+            localStorage.setItem(bestStorageKey, String(best));
+            bestEl.textContent = String(best);
+          }
+        }
+      }
+
+      function render() {
+        const grid = Array.from({ length: HEIGHT }, () => Array(WIDTH).fill(" "));
+
+        for (const o of obstacles) {
+          if (o.y >= 0 && o.y < HEIGHT && o.x >= 0 && o.x < WIDTH) {
+            grid[o.y][o.x] = "*";
+          }
+        }
+
+        grid[HEIGHT - 1][playerX] = "@";
+
+        const topBorder = "+" + "-".repeat(WIDTH) + "+";
+        const rows = grid.map((row) => "|" + row.join("") + "|");
+        let text = [topBorder, ...rows, topBorder].join("\n");
+
+        if (over) {
+          text += "\n\nGAME OVER - press Restart";
+        }
+
+        screen.textContent = text;
+      }
+
+      function loop(ts) {
+        if (!lastTime) lastTime = ts;
+        const delta = ts - lastTime;
+        const interval = 80;
+
+        if (delta >= interval && !over) {
+          update();
+          lastTime = ts;
+        }
+
+        render();
+        rafId = requestAnimationFrame(loop);
+      }
+
+      function start() {
+        cancelAnimationFrame(rafId);
+        resetGame();
+        render();
+        rafId = requestAnimationFrame(loop);
+      }
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") moveLeft = true;
+        if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") moveRight = true;
+      });
+
+      document.addEventListener("keyup", (e) => {
+        if (e.key === "ArrowLeft" || e.key.toLowerCase() === "a") moveLeft = false;
+        if (e.key === "ArrowRight" || e.key.toLowerCase() === "d") moveRight = false;
+      });
+
+      restartBtn.addEventListener("click", start);
+      start();
+    </script>
+  </body>
+</html>
